@@ -16,19 +16,27 @@
 | 🌿 绿影【增长】 | 推广策略 | docs/growth_strategy.md | 🔄 |
 | ⚡ 雷影【执行】 | MVP 验证、快速迭代 | main.py | 🔄 |
 
+## GitHub 仓库
+
+**仓库地址:** https://github.com/zjgzcc/pdf-converter-pro
+
+**当前分支:** master
+
+---
+
 ## GitHub 协同流程
 
-1. **创建仓库**
+1. **克隆仓库**
    ```bash
+   git clone https://github.com/zjgzcc/pdf-converter-pro.git
    cd pdf-converter-pro
-   git remote add origin https://github.com/YOUR_USERNAME/pdf-converter-pro.git
    ```
 
 2. **推送代码**
    ```bash
    git add .
-   git commit -m "Initial commit - PDF Converter Pro MVP"
-   git push -u origin main
+   git commit -m "feat: your changes"
+   git push origin master
    ```
 
 3. **分支开发**
