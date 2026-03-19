@@ -5,10 +5,10 @@
 | 成员 | 任务 | 文件 | 状态 |
 |------|------|------|------|
 | 🦎 龙一【主理】 | 项目初始化、总协调 | README.md, main.py | ✅ |
-| 🔍 龙二【技术】 | OCR 模块、转换模块优化 | core/ocr.py, core/converter.py | 🔄 |
-| 📊 赤影【市场】 | 竞品分析报告 | docs/market_research.md | 🔄 |
-| 🧪 青影【测试】 | 单元测试、集成测试 | tests/test_*.py | 🔄 |
-| ⚙️ 紫影【研发】 | 代码评审、架构优化 | core/*.py | 🔄 |
+| 🔍 龙二【技术】 | OCR 模块、转换模块优化 | core/ocr.py, core/converter.py | ✅ |
+| 📊 赤影【技术】 | OCR 核心功能开发 | core/ocr.py, scripts/batch_ocr.py | ✅ |
+| 🧪 青影【测试】 | 单元测试、集成测试 | tests/test_*.py | ✅ |
+| ⚙️ 紫影【研发】 | 代码评审、架构优化 | core/*.py | ✅ |
 | 🎨 橙影【设计】 | UI 美化、图标设计 | ui/main_window.py, assets/ | 🔄 |
 | 🌙 月影【情报】 | 技术资料搜集 | docs/references.md | 🔄 |
 | 🔥 炎影【运营】 | 用户文档、发布计划 | docs/user_guide.md | 🔄 |

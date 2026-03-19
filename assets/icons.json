@@ -1,0 +1,49 @@
+{
+  "app_icon": "🦎",
+  "icons": {
+    "select_input": "📁",
+    "select_output": "📂",
+    "start": "▶️",
+    "stop": "⏹️",
+    "settings": "⚙️",
+    "info": "ℹ️",
+    "success": "✅",
+    "error": "❌",
+    "warning": "⚠️",
+    "file": "📄",
+    "pdf": "📕",
+    "word": "📘",
+    "image": "🖼️",
+    "folder": "📁",
+    "trash": "🗑️",
+    "refresh": "🔄",
+    "history": "🕐",
+    "drag_drop": "📥"
+  },
+  "colors": {
+    "primary": "#6c5ce7",
+    "primary_dark": "#5b4cdb",
+    "primary_light": "#a29bfe",
+    "success": "#00b894",
+    "success_dark": "#00a383",
+    "error": "#d63031",
+    "warning": "#fdcb6e",
+    "info": "#0984e3",
+    "background": "#f5f6fa",
+    "surface": "#ffffff",
+    "text_primary": "#2d3436",
+    "text_secondary": "#636e72",
+    "border": "#dfe6e9"
+  },
+  "spacing": {
+    "small": 8,
+    "medium": 15,
+    "large": 24,
+    "xlarge": 32
+  },
+  "border_radius": {
+    "small": 5,
+    "medium": 8,
+    "large": 15
+  }
+}

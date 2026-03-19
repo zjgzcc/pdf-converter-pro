@@ -9,8 +9,11 @@ pdf2docx>=0.1.0
 # 去水印
 opencv-python>=4.9.0
 numpy>=1.26.0
-# IOPaint (可选，需要单独安装)
+# IOPaint (可选，复杂水印推荐安装)
 # pip install iopaint
+
+# 图像处理
+Pillow>=10.2.0
 
 # WORD 转换
 paddlepaddle>=2.6.0
@@ -23,4 +26,3 @@ PyQt6>=6.6.0
 
 # 工具
 tqdm>=4.66.0
-Pillow>=10.2.0
