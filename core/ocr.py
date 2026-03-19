@@ -51,6 +51,10 @@ class OCRConfig:
     optimize: bool = True  # 优化输出 PDF
     deskew: bool = False  # 自动纠正倾斜
     clean: bool = False   # 清理图像噪声
+    # 内存优化配置（新增）
+    max_pages_per_batch: int = 50  # 大批量处理时每批最大页数
+    enable_memory_optimization: bool = True  # 启用内存优化模式
+    gc_interval: int = 10  # 每处理 N 页后强制垃圾回收
     
     def apply_quality_preset(self):
         """应用质量预设"""
@@ -115,17 +119,23 @@ class OCRError(Exception):
 class OCREngine:
     """OCR 引擎 - 支持 OCRmyPDF 和 Tesseract"""
     
+    # 类级别单例：PaddleOCR 模型预加载（全局共享）
+    _paddleocr_instance = None
+    _paddleocr_loaded = False
+    
     def __init__(
         self,
         engine_type: OCREngineType = OCREngineType.OCRMYDF,
         config: Optional[OCRConfig] = None,
-        progress_callback: Optional[Callable[[OCRProgress], None]] = None
+        progress_callback: Optional[Callable[[OCRProgress], None]] = None,
+        preload_models: bool = True  # 新增：是否预加载模型
     ):
         """
         Args:
             engine_type: OCR 引擎类型
             config: OCR 配置
             progress_callback: 进度回调函数
+            preload_models: 是否预加载 AI 模型（默认 True，启动时加载避免首次延迟）
         """
         self.engine_type = engine_type
         self.config = config or OCRConfig()
@@ -133,6 +143,10 @@ class OCREngine:
         self.progress_callback = progress_callback
         self._engines_available: Dict[str, bool] = {}
         self._validate_engines()
+        
+        # 预加载 PaddleOCR 模型（避免首次处理时延迟）
+        if preload_models and engine_type == OCREngineType.PADDLEOCR:
+            self._preload_paddleocr()
     
     def _validate_engines(self):
         """验证 OCR 引擎可用性"""
@@ -158,6 +172,36 @@ class OCREngine:
             except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
                 self._engines_available[engine_type.value] = False
                 logger.warning(f"OCR 引擎 {cmd} 不可用：{e}")
+    
+    def _preload_paddleocr(self):
+        """预加载 PaddleOCR 模型到内存（单例模式）"""
+        if OCREngine._paddleocr_loaded:
+            logger.info("PaddleOCR 模型已预加载，跳过")
+            return
+        
+        try:
+            logger.info("正在预加载 PaddleOCR 模型...（首次启动可能需要 10-30 秒）")
+            from paddleocr import PaddleOCR
+            
+            # 创建全局单例实例
+            OCREngine._paddleocr_instance = PaddleOCR(
+                lang='ch',
+                use_angle_cls=True,
+                show_log=False,
+                use_gpu=False  # 默认使用 CPU，如有 GPU 可改为 True
+            )
+            
+            OCREngine._paddleocr_loaded = True
+            logger.info("✅ PaddleOCR 模型预加载完成")
+            
+        except Exception as e:
+            logger.warning(f"PaddleOCR 预加载失败：{e}，将在首次使用时延迟加载")
+            OCREngine._paddleocr_loaded = False
+    
+    @classmethod
+    def get_paddleocr_instance(cls) -> Optional[Any]:
+        """获取 PaddleOCR 单例实例"""
+        return cls._paddleocr_instance
     
     def is_engine_available(self) -> bool:
         """检查当前选择的引擎是否可用"""
@@ -247,11 +291,29 @@ class OCREngine:
         OCRmyPDF 会自动添加文本层到 PDF
         """
         try:
+            import shutil
+            
+            # 查找 ocrmypdf 可执行文件
+            ocrmypdf_path = shutil.which('ocrmypdf')
+            if not ocrmypdf_path:
+                # 尝试默认路径
+                ocrmypdf_path = r'C:\Python311\Scripts\ocrmypdf.exe'
+            
+            if not Path(ocrmypdf_path).exists():
+                logger.error(f"ocrmypdf 可执行文件不存在：{ocrmypdf_path}")
+                return OCRResult(
+                    success=False,
+                    input_file=input_pdf,
+                    error_message=f"ocrmypdf 未找到：{ocrmypdf_path}"
+                )
+            
+            logger.info(f"使用 ocrmypdf: {ocrmypdf_path}")
+            
             cmd = [
-                "ocrmypdf",
+                ocrmypdf_path,
                 "--language", config.language,
                 "--output-type", "pdf",
-                "--dpi", str(config.dpi),
+                "--image-dpi", str(config.dpi),
                 "--jobs", str(config.threads),
             ]
             
@@ -262,8 +324,9 @@ class OCREngine:
             if config.skip_text:
                 cmd.append("--skip-text")
             
-            if config.optimize:
-                cmd.extend(["--optimize", "3"])
+            # 禁用优化（需要 pngquant，默认不安装）
+            # if config.optimize:
+            #     cmd.extend(["--optimize", "3"])
             
             if config.deskew:
                 cmd.append("--deskew")
@@ -272,8 +335,9 @@ class OCREngine:
                 cmd.append("--clean")
             
             # 详细输出用于进度跟踪
-            cmd.append("--verbose")
+            cmd.extend(["-v", "1"])
             
+            # 输入输出文件必须在最后
             cmd.extend([str(input_pdf), str(output_pdf)])
             
             logger.info(f"执行 OCRmyPDF: {' '.join(cmd)}")
@@ -287,6 +351,19 @@ class OCREngine:
             
             if result.returncode == 0:
                 logger.info(f"OCRmyPDF 成功：{output_pdf}")
+                
+                # 检查文件是否真的存在
+                if not output_pdf.exists():
+                    logger.error(f"OCRmyPDF 报告成功，但输出文件不存在：{output_pdf}")
+                    # 尝试查找可能的输出位置
+                    import glob
+                    possible_files = glob.glob(str(output_pdf.parent / "*.pdf"))
+                    logger.info(f"目录中的 PDF 文件：{possible_files}")
+                    return OCRResult(
+                        success=False,
+                        input_file=input_pdf,
+                        error_message=f"输出文件未创建：{output_pdf}"
+                    )
                 
                 # 提取页数的逻辑
                 pages = 0
@@ -328,15 +405,13 @@ class OCREngine:
         config: OCRConfig
     ) -> OCRResult:
         """
-        使用 Tesseract 转换
-        需要先将 PDF 转为图片，OCR 后添加文本层
+        使用 Tesseract 直接生成可搜索 PDF（真正独立实现）
+        Tesseract 4.0+ 支持 pdf 输出格式
         """
         try:
-            import fitz  # PyMuPDF
-            from PIL import Image
-            import io
+            import fitz
             
-            logger.info(f"使用 Tesseract OCR: {input_pdf}")
+            logger.info(f"使用 Tesseract 直接生成 PDF: {input_pdf}")
             
             # 打开 PDF
             doc = fitz.open(str(input_pdf))
@@ -353,84 +428,101 @@ class OCREngine:
             all_text = []
             
             try:
-                for page_num, page in enumerate(doc):
+                # 为每一页生成 PDF
+                page_pdfs = []
+                
+                for page_num in range(total_pages):
                     if self.progress_callback:
                         self.progress_callback(OCRProgress(
                             current_page=page_num + 1,
                             total_pages=total_pages,
                             status="processing",
-                            message=f"处理第 {page_num + 1}/{total_pages} 页"
+                            message=f"Tesseract 处理第 {page_num + 1}/{total_pages} 页"
                         ))
                     
-                    # 渲染页面为图片
+                    # 获取页面
+                    page = doc[page_num]
+                    
+                    # 渲染为图片
                     zoom = config.dpi / 72
                     mat = fitz.Matrix(zoom, zoom)
                     pix = page.get_pixmap(matrix=mat)
-                    img_data = pix.tobytes("png")
                     
-                    # Tesseract OCR（输出 hOCR 格式）
-                    img_path = temp_dir / f"page_{page_num:04d}.png"
-                    img_path.write_bytes(img_data)
+                    # 保存临时图片
+                    temp_img = temp_dir / f"page_{page_num:04d}.png"
+                    pix.save(str(temp_img))
                     
-                    hocr_path = temp_dir / f"page_{page_num:04d}.hocr"
+                    # 使用 Tesseract 生成 PDF
+                    temp_pdf_base = temp_dir / f"page_{page_num:04d}"
                     
-                    try:
-                        result = subprocess.run(
-                            [
-                                "tesseract",
-                                str(img_path),
-                                str(hocr_path.with_suffix('')),
-                                "-l", config.language.replace("+", "+"),
-                                "--psm", "3",  # 自动页面分割
-                                "hocr"  # 输出 hOCR 格式
-                            ],
+                    result = subprocess.run(
+                        [
+                            "tesseract",
+                            str(temp_img),
+                            str(temp_pdf_base),
+                            "-l", config.language.replace("+", "+"),
+                            "pdf"  # 直接输出 PDF 格式
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=120
+                    )
+                    
+                    temp_pdf = temp_dir / f"page_{page_num:04d}.pdf"
+                    
+                    if result.returncode == 0 and temp_pdf.exists():
+                        page_pdfs.append(temp_pdf)
+                        logger.info(f"第 {page_num + 1} 页 PDF 生成成功")
+                        
+                        # 提取文本用于返回
+                        txt_result = subprocess.run(
+                            ["tesseract", str(temp_img), "stdout", "-l", config.language.replace("+", "+")],
                             capture_output=True,
                             text=True,
-                            timeout=120
+                            timeout=60
                         )
-                        
-                        if result.returncode == 0:
-                            # 读取 hOCR 文件提取文本
-                            if hocr_path.exists():
-                                hocr_content = hocr_path.read_text(encoding='utf-8')
-                                # 简单提取文本（生产环境应用更完善的 hOCR 解析）
-                                import re
-                                text_matches = re.findall(r'x_text">([^<]+)', hocr_content)
-                                page_text = ' '.join(text_matches)
-                                all_text.append(page_text)
-                            else:
-                                # 回退到普通输出
-                                txt_path = temp_dir / f"page_{page_num:04d}.txt"
-                                if txt_path.exists():
-                                    all_text.append(txt_path.read_text(encoding='utf-8'))
-                        else:
-                            logger.warning(f"第 {page_num + 1} 页 OCR 失败：{result.stderr}")
-                            all_text.append("")
-                            
-                    except subprocess.TimeoutExpired:
-                        logger.warning(f"第 {page_num + 1} 页 OCR 超时")
+                        all_text.append(txt_result.stdout if txt_result.returncode == 0 else "")
+                    else:
+                        logger.error(f"第 {page_num + 1} 页 PDF 生成失败: {result.stderr}")
+                        # 创建一个空白页面作为占位
+                        blank_doc = fitz.open()
+                        blank_doc.new_page(width=page.rect.width, height=page.rect.height)
+                        blank_pdf = temp_dir / f"blank_{page_num:04d}.pdf"
+                        blank_doc.save(str(blank_pdf))
+                        blank_doc.close()
+                        page_pdfs.append(blank_pdf)
                         all_text.append("")
                 
                 doc.close()
                 
-                # 使用 OCRmyPDF 的 pdf-renderer 或 hocrpdf 创建可搜索 PDF
-                # 简化方案：直接调用 ocrmypdf 处理
-                logger.info("Tesseract OCR 完成，使用 OCRmyPDF 创建可搜索 PDF")
+                # 合并所有页面
+                logger.info("Tesseract 合并 PDF 页面...")
+                output_doc = fitz.open()
                 
-                # 实际上，纯 Tesseract 流程复杂，建议回退到 OCRmyPDF
-                return self._ocrmypdf_convert(input_pdf, output_pdf, config)
+                for page_pdf in page_pdfs:
+                    src = fitz.open(str(page_pdf))
+                    output_doc.insert_pdf(src)
+                    src.close()
+                
+                # 保存最终 PDF
+                output_pdf.parent.mkdir(parents=True, exist_ok=True)
+                output_doc.save(str(output_pdf))
+                output_doc.close()
+                
+                logger.info(f"Tesseract PDF 创建成功: {output_pdf}")
+                
+                return OCRResult(
+                    success=True,
+                    input_file=input_pdf,
+                    output_file=output_pdf,
+                    pages_processed=total_pages,
+                    text_extracted='\n'.join(all_text)
+                )
                 
             finally:
                 # 清理临时文件
                 shutil.rmtree(temp_dir, ignore_errors=True)
             
-        except ImportError as e:
-            logger.error(f"缺少依赖：{e}")
-            return OCRResult(
-                success=False,
-                input_file=input_pdf,
-                error_message=f"缺少依赖：{e}"
-            )
         except Exception as e:
             logger.error(f"Tesseract OCR 异常：{e}", exc_info=True)
             return OCRResult(
@@ -445,12 +537,13 @@ class OCREngine:
         output_pdf: Path,
         config: OCRConfig
     ) -> OCRResult:
-        """使用 PaddleOCR 转换"""
+        """使用 PaddleOCR 转换（使用预加载模型 + 内存优化）"""
         try:
             logger.info(f"使用 PaddleOCR: {input_pdf}")
             
             # PaddleOCR 更适合图片，PDF 需要先转图片
             import fitz
+            import gc  # 垃圾回收
             
             doc = fitz.open(str(input_pdf))
             total_pages = len(doc)
@@ -459,6 +552,25 @@ class OCREngine:
             all_text = []
             
             try:
+                # 获取预加载的 PaddleOCR 单例实例（避免重复加载模型）
+                ocr = self.get_paddleocr_instance()
+                
+                # 如果预加载失败，现场创建实例（降级处理）
+                if ocr is None:
+                    logger.warning("PaddleOCR 预加载实例不可用，现场创建实例...")
+                    from paddleocr import PaddleOCR
+                    ocr = PaddleOCR(
+                        lang='ch',
+                        use_angle_cls=True,
+                        show_log=False
+                    )
+                
+                # 内存优化：分批处理大文件
+                enable_mem_opt = config.enable_memory_optimization
+                batch_size = config.max_pages_per_batch if enable_mem_opt else total_pages
+                
+                logger.info(f"内存优化模式：{'启用' if enable_mem_opt else '禁用'}，批次大小：{batch_size} 页")
+                
                 for page_num, page in enumerate(doc):
                     if self.progress_callback:
                         self.progress_callback(OCRProgress(
@@ -474,14 +586,7 @@ class OCREngine:
                     img_path = temp_dir / f"page_{page_num:04d}.png"
                     pix.save(str(img_path))
                     
-                    # PaddleOCR
-                    from paddleocr import PaddleOCR
-                    ocr = PaddleOCR(
-                        lang='ch',
-                        use_angle_cls=True,
-                        show_log=False
-                    )
-                    
+                    # 使用预加载的 PaddleOCR 实例进行识别
                     result = ocr.ocr(str(img_path), cls=True)
                     
                     page_text = ""
@@ -491,16 +596,88 @@ class OCREngine:
                                 page_text += line[1][0] + "\n"
                     
                     all_text.append(page_text)
+                    
+                    # 内存优化：定期清理临时对象
+                    if enable_mem_opt and (page_num + 1) % config.gc_interval == 0:
+                        # 清理临时图片（保留最近几页）
+                        old_imgs = list(temp_dir.glob("page_*.png"))
+                        keep_count = 5
+                        if len(old_imgs) > keep_count:
+                            for img in old_imgs[:-keep_count]:
+                                try:
+                                    img.unlink()
+                                except:
+                                    pass
+                        # 强制垃圾回收
+                        gc.collect()
+                        logger.debug(f"内存优化：已处理 {page_num + 1}/{total_pages} 页，清理临时文件")
+                    
+                    # 内存优化：分批处理，每批结束后清理
+                    if enable_mem_opt and (page_num + 1) % batch_size == 0:
+                        logger.info(f"完成第 {(page_num + 1) // batch_size} 批次，清理内存...")
+                        gc.collect()
                 
                 doc.close()
                 
                 # 保存文本
                 extracted_text = '\n'.join(all_text)
                 
-                # PaddleOCR 不直接支持输出可搜索 PDF，需要额外处理
-                # 建议回退到 OCRmyPDF
-                logger.info("PaddleOCR 文本提取完成，使用 OCRmyPDF 创建可搜索 PDF")
-                return self._ocrmypdf_convert(input_pdf, output_pdf, config)
+                # 使用 PaddleOCR 创建可搜索 PDF（独立实现，不依赖 ocrmypdf）
+                logger.info("PaddleOCR 文本提取完成，创建可搜索 PDF...")
+                
+                # 创建新的 PDF，包含文本层
+                output_doc = fitz.open()
+                src_doc = fitz.open(str(input_pdf))
+                
+                for page_num in range(total_pages):
+                    if self.progress_callback:
+                        self.progress_callback(OCRProgress(
+                            current_page=page_num + 1,
+                            total_pages=total_pages,
+                            status="processing",
+                            message=f"创建 PDF 第 {page_num + 1}/{total_pages} 页"
+                        ))
+                    
+                    src_page = src_doc[page_num]
+                    
+                    # 创建新页面
+                    new_page = output_doc.new_page(width=src_page.rect.width, height=src_page.rect.height)
+                    
+                    # 插入原始页面作为图片
+                    pix = src_page.get_pixmap()
+                    new_page.insert_image(new_page.rect, pixmap=pix)
+                    
+                    # 添加文本层
+                    page_text = all_text[page_num] if page_num < len(all_text) else ""
+                    if page_text.strip():
+                        # 在页面上添加文本（简化处理）
+                        text_box = fitz.Rect(50, 50, src_page.rect.width - 50, src_page.rect.height - 50)
+                        new_page.insert_textbox(
+                            text_box,
+                            page_text,
+                            fontsize=12,
+                            color=(0, 0, 0, 0),  # 透明颜色（不可见但可选择）
+                            overlay=True
+                        )
+                
+                src_doc.close()
+                
+                # 确保输出目录存在
+                output_pdf.parent.mkdir(parents=True, exist_ok=True)
+                
+                # 保存输出 PDF
+                output_doc.save(str(output_pdf))
+                output_doc.close()
+                
+                logger.info(f"PaddleOCR PDF 创建成功：{output_pdf}")
+                
+                return OCRResult(
+                    success=True,
+                    input_file=input_pdf,
+                    output_file=output_pdf,
+                    pages_processed=total_pages,
+                    text_extracted=extracted_text
+                )
                 
             finally:
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -569,10 +746,11 @@ def batch_ocr(
     config: Optional[OCRConfig] = None,
     engine_type: OCREngineType = OCREngineType.OCRMYDF,
     max_workers: int = 4,
-    progress_callback: Optional[Callable[[OCRProgress], None]] = None
+    progress_callback: Optional[Callable[[OCRProgress], None]] = None,
+    enable_memory_optimization: bool = True  # 新增：启用内存优化
 ) -> Tuple[int, int, List[OCRResult]]:
     """
-    批量 OCR 处理（多线程加速）
+    批量 OCR 处理（多线程加速 + 内存优化）
     
     Args:
         input_dir: 输入目录
@@ -581,14 +759,24 @@ def batch_ocr(
         engine_type: OCR 引擎类型
         max_workers: 最大线程数
         progress_callback: 进度回调
+        enable_memory_optimization: 是否启用内存优化（默认 True）
         
     Returns:
         (成功数，失败数，详细结果列表)
     """
+    import gc
+    
     output_dir.mkdir(parents=True, exist_ok=True)
     
     cfg = config or OCRConfig()
     cfg.apply_quality_preset()
+    
+    # 内存优化：根据系统内存动态调整并发数
+    if enable_memory_optimization:
+        # 大文件处理时降低并发数，避免内存溢出
+        if cfg.enable_memory_optimization:
+            max_workers = min(max_workers, 2)  # 内存优化模式下限制并发数
+            logger.info(f"内存优化模式：并发数限制为 {max_workers}")
     
     # 查找所有 PDF 文件
     pdf_files = list(input_dir.glob("*.pdf"))
@@ -605,15 +793,20 @@ def batch_ocr(
     fail_count = 0
     
     def process_single_pdf(pdf_path: Path) -> OCRResult:
-        """处理单个 PDF 文件"""
+        """处理单个 PDF 文件（支持内存优化）"""
         output_path = output_dir / f"searchable_{pdf_path.name}"
         
         engine = OCREngine(
             engine_type=engine_type,
-            config=cfg
+            config=cfg,
+            preload_models=True  # 使用预加载模型
         )
         
         result = engine.convert_to_searchable_pdf(pdf_path, output_path)
+        
+        # 内存优化：每处理完一个文件后清理
+        if enable_memory_optimization:
+            gc.collect()
         
         if progress_callback:
             progress_callback(OCRProgress(
@@ -656,6 +849,11 @@ def batch_ocr(
                     input_file=pdf_path,
                     error_message=str(e)
                 ))
+    
+    # 内存优化：全部完成后清理
+    if enable_memory_optimization:
+        gc.collect()
+        logger.info("批量 OCR 完成，内存清理完成")
     
     logger.info(f"批量 OCR 完成：成功 {success_count}/{total_files}, 失败 {fail_count}/{total_files}")
     

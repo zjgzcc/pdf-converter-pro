@@ -15,7 +15,7 @@ numpy>=1.26.0
 # 图像处理
 Pillow>=10.2.0
 
-# WORD 转换
+# WORD 转换 (Python 3.11)
 paddlepaddle>=2.6.0
 paddleocr>=2.6.0
 python-docx>=1.1.0

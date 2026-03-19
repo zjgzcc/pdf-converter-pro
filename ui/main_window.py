@@ -381,8 +381,8 @@ class ProcessingOptionsWidget(QWidget):
         word_method_layout.addWidget(QLabel("方法:"))
         self.combo_convert = QComboBox()
         self.combo_convert.addItems([
-            "🚀 paddleocr - PaddleOCR 版面恢复（推荐）",
-            "⚡ pdf2docx - pdf2docx（适合文本型）",
+            "⚡ pdf2docx - pdf2docx（推荐，稳定）",
+            "🚀 paddleocr - PaddleOCR 版面恢复（复杂布局）",
             "✨ freep2w - FreeP2W（适合公式）"
         ])
         self.combo_convert.setEnabled(True)
@@ -429,15 +429,18 @@ class ProcessingOptionsWidget(QWidget):
         ocr_lang_text = self.combo_ocr_lang.currentText()
         ocr_lang = lang_map.get(ocr_lang_text, "chi_sim+eng")
         
-        # 解析方法
+        # 解析方法（从下拉框文本中提取引擎名称）
         wm_method_text = self.combo_watermark.currentText()
-        wm_method = wm_method_text.split()[-1].lower()
+        # 从"🔧 auto - 自动选择（推荐）"中提取"auto"
+        wm_method = wm_method_text.split()[1].lower().rstrip('-')
         
         ocr_engine_text = self.combo_ocr_engine.currentText()
-        ocr_engine = ocr_engine_text.split()[-1].lower()
+        # 从"🚀 ocrmypdf - OCRmyPDF（推荐）"中提取"ocrmypdf"
+        ocr_engine = ocr_engine_text.split()[1].lower().rstrip('-')
         
         convert_method_text = self.combo_convert.currentText()
-        convert_method = convert_method_text.split()[-1].lower()
+        # 从"🚀 paddleocr - 版面恢复（推荐）"中提取"paddleocr"
+        convert_method = convert_method_text.split()[1].lower().rstrip('-')
         
         return {
             "remove_watermark": self.chk_watermark.isChecked(),

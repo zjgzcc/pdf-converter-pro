@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
 echo Starting PDF Converter Pro...
-python main.py
+echo Using Python 3.11 for PaddlePaddle support...
+C:\Python311\python.exe main.py
 pause

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>测试上传</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .log { background: #2d3436; color: #dfe6e9; padding: 15px; margin-top: 20px; max-height: 400px; overflow-y: auto; font-family: monospace; }
+        .btn { padding: 10px 20px; background: #6c5ce7; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🧪 测试上传</h1>
+    <input type="file" id="fileInput" multiple>
+    <button class="btn" onclick="testUpload()">测试上传</button>
+    <div class="log" id="log"></div>
+
+    <script>
+        function log(msg, type='info') {
+            const color = type === 'error' ? '#ff7675' : type === 'success' ? '#55efc4' : '#74b9ff';
+            document.getElementById('log').innerHTML += `<div style="color:${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+        }
+
+        async function testUpload() {
+            const files = document.getElementById('fileInput').files;
+            if (files.length === 0) {
+                log('请先选择文件', 'error');
+                return;
+            }
+
+            log(`📤 开始上传 ${files.length} 个文件...`);
+
+            const formData = new FormData();
+            for (let f of files) {
+                formData.append('files', f);
+            }
+            formData.append('watermark', 'false');
+            formData.append('ocr', 'true');
+            formData.append('word', 'true');
+            formData.append('ocr_engine', 'ocrmypdf');
+            formData.append('word_method', 'pdf2docx');
+            formData.append('output_dir', 'D:\\测试');
+
+            try {
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    log(`✅ ${data.message}`, 'success');
+                    log(`📁 输出目录：${data.output_dir}`, 'success');
+                } else {
+                    log(`❌ 错误：${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 异常：${error.message}`, 'error');
+            }
+
+            // 开始轮询状态
+            pollStatus();
+        }
+
+        async function pollStatus() {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const status = await response.json();
+
+                    log(`📊 进度：${status.progress}% - ${status.message}`);
+
+                    if (status.logs.length > 0) {
+                        const lastLog = status.logs[status.logs.length - 1];
+                        log(`${lastLog.message}`, lastLog.level);
+                    }
+
+                    if (!status.is_processing) {
+                        clearInterval(interval);
+                        log(`🎉 完成！成功：${status.success_count}, 失败：${status.fail_count}`, 'success');
+                    }
+                } catch (error) {
+                    console.error('轮询失败:', error);
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+[
+  {
+    "timestamp": "2026-03-19T19:50:07.071085",
+    "input_dir": "D:\\工作\\工作\\奥朋\\05B QA Public 质量部公用\\02-法律法规标准（外来文件）(全员开放——禁止删除或剪切)\\02-标准文件（国标行标）",
+    "output_dir": "D:\\测试",
+    "options": {
+      "remove_watermark": false,
+      "watermark_method": "auto",
+      "do_ocr": true,
+      "ocr_engine": "ocrmypdf",
+      "ocr_lang": "chi_sim+eng",
+      "convert_to_word": true,
+      "convert_method": "pdf2docx",
+      "preserve_format": true
+    },
+    "success": true,
+    "files_processed": 1,
+    "duration_seconds": 0
+  },
+  {
+    "timestamp": "2026-03-19T19:47:05.509334",
+    "input_dir": "D:\\工作\\工作\\奥朋\\05B QA Public 质量部公用\\02-法律法规标准（外来文件）(全员开放——禁止删除或剪切)\\02-标准文件（国标行标）",
+    "output_dir": "D:\\测试",
+    "options": {
+      "remove_watermark": false,
+      "watermark_method": "auto",
+      "do_ocr": true,
+      "ocr_engine": "ocrmypdf",
+      "ocr_lang": "chi_sim+eng",
+      "convert_to_word": true,
+      "convert_method": "paddleocr",
+      "preserve_format": true
+    },
+    "success": true,
+    "files_processed": 1,
+    "duration_seconds": 0
+  }
+]
