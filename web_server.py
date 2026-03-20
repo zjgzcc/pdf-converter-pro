@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 # 导入核心模块
 sys.path.insert(0, str(Path(__file__).parent))
-from core.ocr import OCREngine, OCREngineType, OCRConfig, batch_ocr
+# 🚀 优化：使用新版 OCR 模块（支持并行处理 + 表格优化）
+from core.ocr_v2 import OCREngine, OCREngineType, OCRConfig, batch_ocr_parallel
 from core.converter import PDF2WordConverter, ConvertMethod
 from core.watermark import WatermarkRemover
 
@@ -162,10 +163,12 @@ def process_file(
                 
                 output_pdf = output_dir / f'searchable_{current_file.stem}.pdf'
                 
+                # 🚀 优化：高 DPI + 表格增强（PSM 6 + Sauvola 二值化 + 中文编码修复）
                 config = OCRConfig(
-                    language='chi_sim+eng',
-                    dpi=300,
-                    enable_memory_optimization=True
+                    language='chi_sim',  # 🚀 修复：只用简体中文，避免编码混乱
+                    dpi=450,  # 🚀 提升：300 → 450
+                    enable_memory_optimization=True,
+                    enhance_tables=True,  # 🚀 新增：表格增强模式（启用 PSM 6 + Sauvola）
                 )
                 
                 engine = OCREngine(
@@ -179,7 +182,7 @@ def process_file(
                 if result.success:
                     current_file = output_pdf
                     temp_files.append(output_pdf)
-                    log_message(f"🔍 {filename}: OCR 完成", 'success')
+                    log_message(f"🔍 {filename}: OCR 完成（{result.pages_processed}页，{result.processing_time:.1f}秒）", 'success')
                 else:
                     log_message(f"🔍 {filename}: OCR 失败 - {result.error_message}", 'error')
                     
@@ -369,17 +372,94 @@ def process_files():
             traceback.print_exc()
             raise
         
-        # 保存上传的文件并处理
+        # 🚀 优化：并行处理函数
         def process_in_background():
             log_message("🔧 后台线程已启动", 'info')
             try:
-                log_message(f"🔧 开始处理 {len(saved_files)} 个文件", 'info')
-                for idx, input_path in enumerate(saved_files):
-                    log_message(f"🔧 处理第 {idx+1} 个文件：{input_path}", 'info')
-                    # 处理文件
-                    process_file(input_path, output_dir, options, idx, len(saved_files))
-                
-                log_message("🔧 所有文件处理完成", 'info')
+                # 🚀 优化：仅 OCR 功能启用并行处理
+                if options.get('ocr', False) and not options.get('watermark', False) and not options.get('word', False):
+                    # 纯 OCR 处理：使用并行处理
+                    log_message(f"🚀 启用并行 OCR 处理：{len(saved_files)} 个文件", 'info')
+                    
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    import gc
+                    
+                    max_workers = 2  # 同时处理 2 个文件
+                    success_count = 0
+                    fail_count = 0
+                    
+                    def process_single_ocr(input_path: Path, idx: int) -> bool:
+                        """处理单个 OCR 任务"""
+                        try:
+                            log_message(f"🔍 [线程 {idx+1}/{len(saved_files)}] 开始处理：{input_path.name}", 'info')
+                            
+                            # 更新进度
+                            processing_status['current_file'] = input_path.name
+                            processing_status['progress'] = int((idx / len(saved_files)) * 100)
+                            
+                            # OCR 配置
+                            engine_type = OCREngineType(options.get('ocr_engine', 'ocrmypdf'))
+                            config = OCRConfig(
+                                language='chi_sim+eng',
+                                dpi=450,
+                                enable_memory_optimization=True,
+                                enhance_tables=True,
+                                clean=True,
+                                deskew=True
+                            )
+                            
+                            output_pdf = output_dir / f'searchable_{input_path.stem}.pdf'
+                            
+                            engine = OCREngine(
+                                engine_type=engine_type,
+                                config=config,
+                                preload_models=True
+                            )
+                            
+                            result = engine.convert_to_searchable_pdf(input_path, output_pdf)
+                            
+                            if result.success:
+                                log_message(f"✅ [线程 {idx+1}] {input_path.name}: OCR 完成（{result.pages_processed}页，{result.processing_time:.1f}秒）", 'success')
+                                processing_status['success_count'] += 1
+                                return True
+                            else:
+                                log_message(f"❌ [线程 {idx+1}] {input_path.name}: OCR 失败 - {result.error_message}", 'error')
+                                processing_status['fail_count'] += 1
+                                return False
+                                
+                        except Exception as e:
+                            log_message(f"❌ [线程 {idx+1}] {input_path.name}: 异常 - {str(e)}", 'error')
+                            processing_status['fail_count'] += 1
+                            return False
+                        finally:
+                            processing_status['processed_files'] += 1
+                            processing_status['progress'] = int((processing_status['processed_files'] / len(saved_files)) * 100)
+                            gc.collect()
+                    
+                    # 🚀 并行处理
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = {
+                            executor.submit(process_single_ocr, input_path, idx): input_path
+                            for idx, input_path in enumerate(saved_files)
+                        }
+                        
+                        for future in as_completed(futures):
+                            try:
+                                future.result()
+                            except Exception as e:
+                                log_message(f"❌ 线程异常：{str(e)}", 'error')
+                    
+                    log_message(f"🎉 并行处理完成！成功：{processing_status['success_count']}, 失败：{processing_status['fail_count']}", 'success')
+                    
+                else:
+                    # 传统串行处理（去水印/WORD 转换需要顺序执行）
+                    log_message(f"📋 使用串行处理：{len(saved_files)} 个文件", 'info')
+                    for idx, input_path in enumerate(saved_files):
+                        log_message(f"🔧 处理第 {idx+1} 个文件：{input_path}", 'info')
+                        process_file(input_path, output_dir, options, idx, len(saved_files))
+                    
+                    log_message("🔧 所有文件处理完成", 'info')
+                    
             except Exception as e:
                 log_message(f"❌ 后台线程异常：{str(e)}", 'error')
                 import traceback
