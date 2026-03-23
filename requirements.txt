@@ -1,28 +1,27 @@
-# OCR 引擎
-ocrmypdf>=16.0.0
-pytesseract>=0.3.10
+# === 核心依赖（必装）===
+
+# Web 服务器
+flask>=3.0.0
+flask-cors>=4.0.0
 
 # PDF 处理
 PyMuPDF>=1.24.0
+
+# AI OCR 引擎（推荐，精度远超 Tesseract）
+rapidocr_onnxruntime>=1.4.0
+
+# === 可选依赖 ===
+
+# Tesseract OCR（备选引擎，需另装 Tesseract 程序）
+# ocrmypdf>=16.0.0
+# pytesseract>=0.3.10
+
+# PDF 转 WORD
 pdf2docx>=0.1.0
 
 # 去水印
 opencv-python>=4.9.0
 numpy>=1.26.0
-# IOPaint (可选，复杂水印推荐安装)
-# pip install iopaint
 
 # 图像处理
 Pillow>=10.2.0
-
-# WORD 转换 (Python 3.11)
-paddlepaddle>=2.6.0
-paddleocr>=2.6.0
-python-docx>=1.1.0
-
-# GUI
-PyQt6>=6.6.0
-# 或 CustomTkinter>=5.2.0
-
-# 工具
-tqdm>=4.66.0
