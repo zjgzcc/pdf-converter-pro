@@ -38,6 +38,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core.ocr_v2 import OCREngine, OCREngineType, OCRConfig, batch_ocr_parallel
 from core.converter import PDF2WordConverter, ConvertMethod
 from core.watermark import WatermarkRemover
+from core.postprocess import rebuild_text_layer
+from core.rapid_ocr import rapid_ocr_pdf
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
@@ -59,9 +61,9 @@ processing_status = {
 TEMP_DIR = Path(tempfile.gettempdir()) / 'pdf_converter_pro'
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-# 默认输出目录（用户桌面）
-DEFAULT_OUTPUT_DIR = Path.home() / 'Desktop' / 'PDF_Converter_Output'
-DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# 输出目录（临时目录，处理完通过浏览器下载）
+OUTPUT_DIR = TEMP_DIR / 'output'
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def log_message(message: str, level: str = 'info'):
@@ -154,37 +156,38 @@ def process_file(
         
         # 步骤 2: OCR 识别（如果启用）
         if options.get('ocr', False):
-            log_message(f"🔍 {filename}: OCR 识别中...", 'info')
-            processing_status['message'] = f'OCR 识别：{filename}'
+            log_message(f"🔍 {filename}: AI OCR 识别中（RapidOCR）...", 'info')
+            processing_status['message'] = f'AI OCR 识别：{filename}'
             
             try:
-                ocr_engine = options.get('ocr_engine', 'ocrmypdf')
-                engine_type = OCREngineType(ocr_engine)
-                
                 output_pdf = output_dir / f'searchable_{current_file.stem}.pdf'
                 
-                # 🚀 优化：高 DPI + 表格增强（PSM 6 + Sauvola 二值化 + 中文编码修复）
-                config = OCRConfig(
-                    language='chi_sim',  # 🚀 修复：只用简体中文，避免编码混乱
-                    dpi=450,  # 🚀 提升：300 → 450
-                    enable_memory_optimization=True,
-                    enhance_tables=True,  # 🚀 新增：表格增强模式（启用 PSM 6 + Sauvola）
-                )
+                # 🚀 优先使用 RapidOCR（AI 引擎，精度远超 Tesseract）
+                result = rapid_ocr_pdf(current_file, output_pdf, dpi=200)
                 
-                engine = OCREngine(
-                    engine_type=engine_type,
-                    config=config,
-                    preload_models=True
-                )
-                
-                result = engine.convert_to_searchable_pdf(current_file, output_pdf)
-                
-                if result.success:
+                if result["success"]:
                     current_file = output_pdf
                     temp_files.append(output_pdf)
-                    log_message(f"🔍 {filename}: OCR 完成（{result.pages_processed}页，{result.processing_time:.1f}秒）", 'success')
+                    log_message(f"🔍 {filename}: AI OCR 完成（{result['pages']}页，{result['time']:.1f}秒）", 'success')
                 else:
-                    log_message(f"🔍 {filename}: OCR 失败 - {result.error_message}", 'error')
+                    log_message(f"🔍 {filename}: RapidOCR 失败，回退 Tesseract - {result['error']}", 'warning')
+                    # 回退到 Tesseract
+                    ocr_engine = options.get('ocr_engine', 'ocrmypdf')
+                    engine_type = OCREngineType(ocr_engine)
+                    config = OCRConfig(
+                        language='chi_sim+eng',
+                        dpi=450,
+                        enable_memory_optimization=True,
+                        enhance_tables=False,
+                    )
+                    engine = OCREngine(engine_type=engine_type, config=config, preload_models=True)
+                    ocr_result = engine.convert_to_searchable_pdf(current_file, output_pdf)
+                    if ocr_result.success:
+                        current_file = output_pdf
+                        temp_files.append(output_pdf)
+                        log_message(f"🔍 {filename}: Tesseract OCR 完成（{ocr_result.pages_processed}页）", 'success')
+                    else:
+                        log_message(f"🔍 {filename}: OCR 失败 - {ocr_result.error_message}", 'error')
                     
             except Exception as e:
                 log_message(f"🔍 {filename}: OCR 失败 - {str(e)}", 'error')
@@ -313,20 +316,20 @@ def process_files():
             'word': data.get('word') == 'true',
             'ocr_engine': data.get('ocr_engine', 'ocrmypdf'),
             'word_method': data.get('word_method', 'pdf2docx'),
-            'output_dir': data.get('output_dir', str(DEFAULT_OUTPUT_DIR))
+            'output_dir': str(OUTPUT_DIR)
         }
         
         # 验证至少选择一个功能
         if not any([options['watermark'], options['ocr'], options['word']]):
             return jsonify({'error': '请至少选择一个处理功能'}), 400
         
-        # 创建输出目录
-        output_dir = Path(options['output_dir'])
-        try:
-            output_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            log_message(f'❌ 输出目录创建失败：{e}，使用默认目录', 'error')
-            output_dir = DEFAULT_OUTPUT_DIR
+        # 输出目录固定为临时目录
+        output_dir = OUTPUT_DIR
+        # 每次处理前清空旧文件
+        for old_file in output_dir.iterdir():
+            if old_file.is_file():
+                old_file.unlink()
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         # 重置状态
         processing_status['is_processing'] = True
@@ -391,39 +394,22 @@ def process_files():
                     def process_single_ocr(input_path: Path, idx: int) -> bool:
                         """处理单个 OCR 任务"""
                         try:
-                            log_message(f"🔍 [线程 {idx+1}/{len(saved_files)}] 开始处理：{input_path.name}", 'info')
+                            log_message(f"🔍 [线程 {idx+1}/{len(saved_files)}] AI OCR 开始：{input_path.name}", 'info')
                             
-                            # 更新进度
                             processing_status['current_file'] = input_path.name
                             processing_status['progress'] = int((idx / len(saved_files)) * 100)
                             
-                            # OCR 配置
-                            engine_type = OCREngineType(options.get('ocr_engine', 'ocrmypdf'))
-                            config = OCRConfig(
-                                language='chi_sim+eng',
-                                dpi=450,
-                                enable_memory_optimization=True,
-                                enhance_tables=True,
-                                clean=True,
-                                deskew=True
-                            )
-                            
                             output_pdf = output_dir / f'searchable_{input_path.stem}.pdf'
                             
-                            engine = OCREngine(
-                                engine_type=engine_type,
-                                config=config,
-                                preload_models=True
-                            )
+                            # 🚀 优先用 RapidOCR
+                            result = rapid_ocr_pdf(input_path, output_pdf, dpi=200)
                             
-                            result = engine.convert_to_searchable_pdf(input_path, output_pdf)
-                            
-                            if result.success:
-                                log_message(f"✅ [线程 {idx+1}] {input_path.name}: OCR 完成（{result.pages_processed}页，{result.processing_time:.1f}秒）", 'success')
+                            if result["success"]:
+                                log_message(f"✅ [线程 {idx+1}] {input_path.name}: AI OCR 完成（{result['pages']}页，{result['time']:.1f}秒）", 'success')
                                 processing_status['success_count'] += 1
                                 return True
                             else:
-                                log_message(f"❌ [线程 {idx+1}] {input_path.name}: OCR 失败 - {result.error_message}", 'error')
+                                log_message(f"❌ [线程 {idx+1}] {input_path.name}: OCR 失败 - {result['error']}", 'error')
                                 processing_status['fail_count'] += 1
                                 return False
                                 
@@ -505,7 +491,7 @@ def stop_processing():
 def list_outputs():
     """列出输出目录中的文件"""
     try:
-        output_dir = Path(request.args.get('dir', str(DEFAULT_OUTPUT_DIR)))
+        output_dir = OUTPUT_DIR
         if not output_dir.exists():
             return jsonify({'files': []})
         
@@ -515,23 +501,26 @@ def list_outputs():
                 files.append({
                     'name': f.name,
                     'size': f.stat().st_size,
-                    'modified': datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+                    'modified': datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                    'download_url': f'/api/download/{f.name}'
                 })
         
-        return jsonify({'files': files, 'dir': str(output_dir)})
+        return jsonify({'files': files})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/download')
-def download_file():
+@app.route('/api/download/<filename>')
+def download_file(filename):
     """下载文件"""
     try:
-        file_path = Path(request.args.get('path', ''))
+        # 安全检查：防止路径穿越
+        safe_name = Path(filename).name
+        file_path = OUTPUT_DIR / safe_name
         if not file_path.exists() or not file_path.is_file():
             return jsonify({'error': '文件不存在'}), 404
         
-        return send_file(file_path, as_attachment=True)
+        return send_file(str(file_path), as_attachment=True, download_name=safe_name)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -541,7 +530,7 @@ if __name__ == '__main__':
     print("PDF Converter Pro - Web Server")
     print("=" * 60)
     print(f"Temp Dir: {TEMP_DIR}")
-    print(f"Default Output: {DEFAULT_OUTPUT_DIR}")
+    print(f"Output Dir: {OUTPUT_DIR}")
     print("URL: http://localhost:5000")
     print("=" * 60)
     

@@ -1,7 +1,16 @@
 """
-OCR 识别模块 - 并行优化版 v2.0
+OCR 识别模块 - 并行优化版 v2.1
 🔍 龙二【技术】负责实现
 ⚙️ 紫影【研发】负责评审
+🔧 龙六【技术】修复中文识别不准确问题
+
+更新日志 2026-03-23 18:00（龙六修复）：
+🐛 修复：PSM 6 整页 OCR 导致中文识别乱码（改用 PSM 3 自动分割）
+🐛 修复：--tesseract-config 参数语法错误（移除无效配置）
+🐛 修复：--remove-background 损坏文字内容（移除该参数）
+🐛 修复：chi_sim 纯中文缺少英文支持（改为 chi_sim+eng）
+🐛 修复：Sauvola 二值化对干净扫描件识别率下降（改为自适应选择）
+✅ 新增：enhance_tables 模式改为仅对 PaddleOCR 路径生效的图像预处理
 
 更新日志 2026-03-20 12:45：
 ✅ 新增并行处理机制（多线程加速）
@@ -35,7 +44,7 @@ class OCREngineType(Enum):
 @dataclass
 class OCRConfig:
     """OCR 配置 - 优化版"""
-    language: str = "chi_sim"  # 🚀 修复：只用简体中文，避免 eng 混合导致编码问题
+    language: str = "chi_sim+eng"  # 🔧 修复：中英混合，覆盖中文文档中的英文/数字
     dpi: int = 450  # 🚀 提升：300 → 450（表格识别更佳）
     force_ocr: bool = True
     skip_text: bool = False
@@ -252,26 +261,13 @@ class OCREngine:
             if config.skip_text:
                 cmd.append("--skip-text")
             
-            # 🚀 表格增强：使用 OCRmyPDF 内置参数（无需额外依赖）
-            if config.enhance_tables:
-                # 注意：--clean 需要 unpaper，--deskew 需要 scikit-image（均未安装）
-                # 使用内置参数：--remove-background（GhostScript 内置支持）
-                cmd.append("--remove-background")  # 自动去除背景噪声
-                
-                # 🚀 新增：Tesseract PSM 参数（表格识别关键！）
-                # PSM 6 = 统一文本块（适合表格）
-                # PSM 12 = 稀疏文本（适合稀疏表格）
-                # PSM 13 = 全文 + 行（适合密集表格）
-                cmd.extend(["--tesseract-pagesegmode", "6"])
-                
-                # 🚀 新增：Sauvola 自适应二值化（适合表格背景不均匀）
-                cmd.extend(["--tesseract-thresholding", "sauvola"])
-                
-                # 🚀 修复：中文编码问题 - 强制使用 UTF-8 和正确语言包
-                # 确保 Tesseract 使用正确的 Unicode 编码
-                cmd.extend(["--tesseract-config", "tessedit_write_txt=1"])
-                
-                # 图像增强在 _enhance_image_for_ocr 中用 OpenCV 处理（不依赖 OCRmyPDF）
+            # 🔧 修复：使用正确的参数组合提高识别准确率
+            # PSM 3 = 全自动分页分割（适合整页文档，之前 PSM 6 是错的）
+            cmd.extend(["--tesseract-pagesegmode", "3"])
+            
+            # 不使用 --remove-background（官方警告可能损坏文字）
+            # 不使用 --tesseract-thresholding sauvola（对干净扫描件反而降低识别率）
+            # 不使用 --tesseract-config（之前参数语法有误）
             
             cmd.extend(["-v", "1"])
             cmd.extend([str(input_pdf), str(output_pdf)])

@@ -223,6 +223,81 @@
             padding: 0 5px;
         }
         .remove-btn:hover { color: #d63031; }
+        
+        /* 下载结果区 */
+        .download-section {
+            background: #f0fff0;
+            border: 2px solid #55efc4;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            display: none;
+        }
+        .download-section.show { display: block; }
+        .download-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00b894;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .download-list { list-style: none; }
+        .download-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 15px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .download-item-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+        }
+        .download-item-name {
+            font-size: 14px;
+            color: #2d3436;
+            word-break: break-all;
+        }
+        .download-item-size {
+            font-size: 12px;
+            color: #636e72;
+            white-space: nowrap;
+        }
+        .btn-download {
+            background: linear-gradient(135deg, #00b894, #55efc4);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn-download:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,184,148,0.3); }
+        .btn-download-all {
+            background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn-download-all:hover { transform: translateY(-1px); box-shadow: 0 3px 15px rgba(108,92,231,0.3); }
     </style>
 </head>
 <body>
@@ -260,31 +335,6 @@
                         </label>
                     </div>
                 </div>
-                
-                <div class="option-group">
-                    <div class="option-title">⚙️ 高级选项</div>
-                    <div class="select-group">
-                        <div class="select-item">
-                            <label>OCR 引擎</label>
-                            <select id="selOcrEngine">
-                                <option value="ocrmypdf" selected>OCRmyPDF（推荐）</option>
-                                <option value="tesseract">Tesseract</option>
-                                <option value="paddleocr">PaddleOCR</option>
-                            </select>
-                        </div>
-                        <div class="select-item">
-                            <label>WORD 转换方法</label>
-                            <select id="selWordMethod">
-                                <option value="pdf2docx" selected>pdf2docx（稳定）</option>
-                                <option value="paddleocr">PaddleOCR（复杂布局）</option>
-                            </select>
-                        </div>
-                        <div class="select-item" style="grid-column: span 2;">
-                            <label>输出目录</label>
-                            <input type="text" id="inpOutput" value="D:\测试" placeholder="例如：D:\测试">
-                        </div>
-                    </div>
-                </div>
             </div>
             
             <!-- 按钮区 -->
@@ -299,6 +349,12 @@
                     <div class="progress-fill" id="progressFill">0%</div>
                 </div>
                 <div class="progress-text" id="progressText">准备中...</div>
+            </div>
+            
+            <!-- 下载结果区 -->
+            <div class="download-section" id="downloadSection">
+                <div class="download-title">✅ 处理完成，点击下载</div>
+                <ul class="download-list" id="downloadList"></ul>
             </div>
             
             <!-- 日志区 -->
@@ -399,9 +455,8 @@
                 watermark: document.getElementById('chkWatermark').checked,
                 ocr: document.getElementById('chkOCR').checked,
                 word: document.getElementById('chkWord').checked,
-                ocr_engine: document.getElementById('selOcrEngine').value,
-                word_method: document.getElementById('selWordMethod').value,
-                output_dir: document.getElementById('inpOutput').value
+                ocr_engine: 'ocrmypdf',
+                word_method: 'pdf2docx'
             };
             
             if (!options.watermark && !options.ocr && !options.word) {
@@ -413,6 +468,7 @@
             document.getElementById('btnStart').disabled = true;
             document.getElementById('btnStop').disabled = false;
             document.getElementById('progressSection').classList.add('show');
+            document.getElementById('downloadSection').classList.remove('show');
             
             // 更新文件状态
             selectedFiles.forEach(f => f.status = 'processing');
@@ -420,8 +476,6 @@
             
             addLog('🚀 开始处理...', 'info');
             addLog(`📊 文件数：${selectedFiles.length}`, 'info');
-            addLog(`📁 输出目录：${options.output_dir}`, 'info');
-            addLog(`⚙️ 选项：OCR (${options.ocr_engine}) + WORD (${options.word_method})`, 'info');
             
             // 创建 FormData
             const formData = new FormData();
@@ -433,7 +487,6 @@
             formData.append('word', options.word);
             formData.append('ocr_engine', options.ocr_engine);
             formData.append('word_method', options.word_method);
-            formData.append('output_dir', options.output_dir);
             
             try {
                 const response = await fetch(`${API_BASE}/api/process`, {
@@ -455,7 +508,6 @@
                 }
                 
                 addLog(`✅ ${data.message}`, 'success');
-                addLog(`📁 输出目录：${data.output_dir}`, 'success');
                 
                 // 开始轮询状态
                 startStatusPolling();
@@ -498,7 +550,13 @@
             }, 1000);
         }
         
-        function finishProcessing(status) {
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        async function finishProcessing(status) {
             clearInterval(statusInterval);
             isProcessing = false;
             document.getElementById('btnStart').disabled = false;
@@ -511,7 +569,65 @@
             renderFileList();
             
             addLog(`🎉 全部完成！成功：${status.success_count}, 失败：${status.fail_count}`, 'success');
-            addLog('✅ 处理完成', 'success');
+            
+            // 获取输出文件列表，显示下载按钮
+            if (status.success_count > 0) {
+                try {
+                    const resp = await fetch(`${API_BASE}/api/outputs`);
+                    const data = await resp.json();
+                    if (data.files && data.files.length > 0) {
+                        const downloadList = document.getElementById('downloadList');
+                        downloadList.innerHTML = data.files.map(f => `
+                            <li class="download-item">
+                                <div class="download-item-info">
+                                    <span>📄</span>
+                                    <span class="download-item-name">${f.name}</span>
+                                    <span class="download-item-size">${formatFileSize(f.size)}</span>
+                                </div>
+                                <button class="btn-download" onclick="downloadFile('${f.download_url}', '${f.name}')">⬇️ 下载</button>
+                            </li>
+                        `).join('');
+                        
+                        // 多文件时显示"全部下载"按钮
+                        if (data.files.length > 1) {
+                            downloadList.innerHTML += `
+                                <li>
+                                    <button class="btn-download-all" onclick="downloadAllFiles()">⬇️ 全部下载</button>
+                                </li>
+                            `;
+                        }
+                        
+                        document.getElementById('downloadSection').classList.add('show');
+                        addLog('📥 文件已就绪，点击下方按钮下载', 'success');
+                    }
+                } catch (e) {
+                    addLog(`⚠️ 获取文件列表失败：${e.message}`, 'error');
+                }
+            }
+        }
+        
+        function downloadFile(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+        
+        async function downloadAllFiles() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/outputs`);
+                const data = await resp.json();
+                if (data.files) {
+                    for (const f of data.files) {
+                        downloadFile(f.download_url, f.name);
+                        await new Promise(r => setTimeout(r, 500)); // 间隔防止浏览器拦截
+                    }
+                }
+            } catch (e) {
+                addLog(`⚠️ 批量下载失败：${e.message}`, 'error');
+            }
         }
         
         async function stopProcessing() {
