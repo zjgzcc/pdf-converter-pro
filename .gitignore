@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+.venv/
+.venv311/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+*.log
+logs/
+
+# 环境配置
+.env
+.env.local
+.env.*.local
+config.local.json
+*.local.json
+
+# 临时文件
+*.tmp
+*.bak
+*.temp
+temp/
+tmp/
+
+# 输出目录
+output/
+results/
+inference_results/
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter
+.ipynb_checkpoints
+
+# node_modules（如果有前端）
+node_modules/
+
+# 大型文件
+*.zip
+*.tar.gz
+*.rar
+
+# 模型缓存
+.paddleocr/
+.onnx/
+models/

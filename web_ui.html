@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 智能识别 - AI OCR</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 8px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+
+        .file-section {
+            border: 3px dashed #dfe6e9;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 25px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .file-section:hover { border-color: #00b894; background: #f0fff0; }
+        .file-section.dragover { border-color: #00b894; background: #e0ffe0; }
+        .file-icon { font-size: 56px; margin-bottom: 12px; }
+        .file-text { font-size: 18px; color: #2d3436; font-weight: bold; }
+        .file-hint { color: #636e72; font-size: 13px; margin-top: 8px; }
+        #fileInput { display: none; }
+
+        .file-list { margin-bottom: 20px; max-height: 150px; overflow-y: auto; }
+        .file-item {
+            display: flex; align-items: center; padding: 10px;
+            background: #f8f9fa; border-radius: 8px; margin-bottom: 6px; gap: 10px;
+        }
+        .file-name { flex: 1; font-size: 14px; color: #2d3436; word-break: break-all; }
+        .file-size { font-size: 12px; color: #636e72; }
+        .file-status { font-size: 12px; padding: 3px 8px; border-radius: 4px; }
+        .status-pending { background: #dfe6e9; color: #636e72; }
+        .status-processing { background: #74b9ff; color: white; }
+        .status-success { background: #55efc4; color: white; }
+        .status-error { background: #ff7675; color: white; }
+        .remove-btn { background: none; border: none; color: #ff7675; cursor: pointer; font-size: 18px; }
+
+        .button-section { display: flex; gap: 15px; margin-bottom: 25px; }
+        .btn {
+            flex: 1; padding: 15px; border: none; border-radius: 10px;
+            font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s;
+        }
+        .btn-primary { background: linear-gradient(135deg, #00b894, #00cec9); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,184,148,0.4); }
+        .btn-primary:disabled { background: #b2bec3; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #dfe6e9; color: #2d3436; }
+
+        .progress-section {
+            background: #f8f9fa; border-radius: 15px; padding: 20px;
+            margin-bottom: 25px; display: none;
+        }
+        .progress-section.show { display: block; }
+        .progress-bar { height: 25px; background: #dfe6e9; border-radius: 12px; overflow: hidden; margin-bottom: 10px; }
+        .progress-fill {
+            height: 100%; background: linear-gradient(90deg, #00b894, #00cec9);
+            width: 0%; transition: width 0.3s; display: flex; align-items: center;
+            justify-content: center; color: white; font-size: 13px; font-weight: bold;
+        }
+        .progress-text { color: #636e72; font-size: 14px; text-align: center; }
+
+        .download-section {
+            background: #f0fff0; border: 2px solid #55efc4; border-radius: 15px;
+            padding: 25px; margin-bottom: 25px; display: none;
+        }
+        .download-section.show { display: block; }
+        .download-title { font-size: 18px; font-weight: bold; color: #00b894; margin-bottom: 15px; }
+        .stats-bar {
+            padding: 10px 16px; margin-bottom: 12px; background: #e0fff0;
+            border-radius: 8px; font-size: 14px; color: #2d3436; display: none;
+        }
+        .download-list { list-style: none; }
+        .download-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 15px; background: white; border-radius: 8px;
+            margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .download-item-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+        .download-item-name { font-size: 14px; color: #2d3436; word-break: break-all; }
+        .download-item-size { font-size: 12px; color: #636e72; white-space: nowrap; }
+        .btn-download {
+            background: linear-gradient(135deg, #00b894, #55efc4); color: white; border: none;
+            padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: bold;
+            cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-download:hover { transform: translateY(-1px); }
+        .btn-download-all {
+            background: linear-gradient(135deg, #0984e3, #74b9ff); color: white; border: none;
+            padding: 12px; border-radius: 10px; font-size: 16px; font-weight: bold;
+            cursor: pointer; width: 100%; margin-top: 10px;
+        }
+
+        .log-section {
+            background: #2d3436; color: #dfe6e9; border-radius: 15px; padding: 20px;
+            max-height: 250px; overflow-y: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6;
+        }
+        .log-info { color: #74b9ff; }
+        .log-success { color: #55efc4; }
+        .log-error { color: #ff7675; }
+        .log-warning { color: #ffeaa7; }
+
+        .gpu-badge {
+            display: inline-block; padding: 4px 12px; border-radius: 20px;
+            font-size: 12px; margin-top: 8px;
+        }
+        .gpu-on { background: rgba(255,255,255,0.2); color: #55efc4; }
+        .gpu-off { background: rgba(255,255,255,0.1); color: #ffeaa7; }
+        .features {
+            display: flex; gap: 20px; justify-content: center; margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        .feature-tag {
+            font-size: 12px; padding: 4px 12px; border-radius: 20px;
+            background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📄 PDF 智能识别</h1>
+            <p>AI OCR · 将 PDF 转为可搜索、可复制的文档</p>
+            <div class="gpu-badge" id="gpuBadge">⏳ 检测硬件中...</div>
+            <div class="features" id="featureTags">
+                <span class="feature-tag">🔍 中英文识别</span>
+                <span class="feature-tag">📑 批量处理</span>
+                <span class="feature-tag" id="accelTag">⏳ 检测中</span>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="file-section" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <div class="file-icon">📥</div>
+                <div class="file-text">点击或拖拽 PDF 文件到此处</div>
+                <div class="file-hint">支持批量选择，AI 引擎自动识别中英文</div>
+                <input type="file" id="fileInput" multiple accept=".pdf">
+            </div>
+
+            <div class="file-list" id="fileList"></div>
+
+            <div class="button-section">
+                <button class="btn btn-primary" id="btnStart" onclick="startProcessing()">🚀 开始识别</button>
+                <button class="btn btn-secondary" id="btnStop" onclick="stopProcessing()" disabled>⏹️ 停止</button>
+            </div>
+
+            <div class="progress-section" id="progressSection">
+                <div class="progress-bar"><div class="progress-fill" id="progressFill">0%</div></div>
+                <div class="progress-text" id="progressText">准备中...</div>
+            </div>
+
+            <div class="download-section" id="downloadSection">
+                <div class="download-title">✅ 识别完成，点击下载</div>
+                <div class="stats-bar" id="statsBar"></div>
+                <ul class="download-list" id="downloadList"></ul>
+            </div>
+
+            <div class="log-section" id="logSection">
+                <div class="log-entry log-info">👋 欢迎使用 PDF 智能识别！</div>
+                <div class="log-entry log-info">💡 选择 PDF 文件后点击「开始识别」</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let selectedFiles = [];
+        let isProcessing = false;
+        let statusInterval = null;
+        let lastLogCount = 0;
+
+        // 检测硬件加速能力
+        fetch(`${API_BASE}/api/health`).then(r => r.json()).then(d => {
+            const badge = document.getElementById('gpuBadge');
+            const accelTag = document.getElementById('accelTag');
+            if (d.gpu) {
+                badge.textContent = `⚡ GPU 加速已启用`;
+                badge.className = 'gpu-badge gpu-on';
+                accelTag.textContent = `⚡ GPU 加速`;
+                accelTag.style.background = 'rgba(85,239,196,0.25)';
+                accelTag.style.color = '#55efc4';
+            } else {
+                badge.textContent = '💻 CPU 模式（未检测到 GPU，自动使用 CPU 处理）';
+                badge.className = 'gpu-badge gpu-off';
+                accelTag.textContent = '💻 CPU 多核';
+                accelTag.style.background = 'rgba(255,234,167,0.2)';
+                accelTag.style.color = '#ffeaa7';
+            }
+        }).catch(() => {
+            document.getElementById('gpuBadge').textContent = '⚠️ 服务连接中...';
+            document.getElementById('accelTag').textContent = '⏳ 等待连接';
+        });
+
+        const dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault(); dropZone.classList.remove('dragover');
+            addFiles(Array.from(e.dataTransfer.files));
+        });
+        document.getElementById('fileInput').addEventListener('change', e => addFiles(Array.from(e.target.files)));
+
+        function addFiles(files) {
+            const valid = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+            if (valid.length === 0) { alert('请选择 PDF 文件'); return; }
+            selectedFiles = [...selectedFiles, ...valid.map(f => ({ file: f, name: f.name, size: f.size, status: 'pending' }))];
+            renderFileList();
+            addLog(`📄 已添加 ${valid.length} 个文件`, 'info');
+        }
+
+        function renderFileList() {
+            document.getElementById('fileList').innerHTML = selectedFiles.map((f, i) => `
+                <div class="file-item">
+                    <span>📄</span>
+                    <span class="file-name">${f.name}</span>
+                    <span class="file-size">${formatSize(f.size)}</span>
+                    <span class="file-status status-${f.status}">${{pending:'等待',processing:'识别中',success:'完成',error:'失败'}[f.status]}</span>
+                    ${!isProcessing ? `<button class="remove-btn" onclick="selectedFiles.splice(${i},1);renderFileList()">×</button>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function formatSize(b) {
+            if (b < 1024) return b + ' B';
+            if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+            return (b/1048576).toFixed(1) + ' MB';
+        }
+
+        function addLog(msg, type='info') {
+            const log = document.getElementById('logSection');
+            const t = new Date().toLocaleTimeString();
+            log.innerHTML += `<div class="log-entry log-${type}">[${t}] ${msg}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function startProcessing() {
+            if (!selectedFiles.length) { alert('请先选择 PDF 文件！'); return; }
+            isProcessing = true;
+            document.getElementById('btnStart').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            document.getElementById('progressSection').classList.add('show');
+            document.getElementById('downloadSection').classList.remove('show');
+            selectedFiles.forEach(f => f.status = 'processing');
+            renderFileList();
+
+            const fd = new FormData();
+            selectedFiles.forEach(f => fd.append('files', f.file));
+
+            try {
+                const r = await fetch(`${API_BASE}/api/process`, { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error || '处理失败');
+                addLog(`✅ ${d.message}`, 'success');
+                startPolling();
+            } catch(e) {
+                addLog(`❌ ${e.message}`, 'error');
+                isProcessing = false;
+                document.getElementById('btnStart').disabled = false;
+                document.getElementById('btnStop').disabled = true;
+            }
+        }
+
+        let knownFiles = new Set();  // 已显示的文件
+
+        function startPolling() {
+            lastLogCount = 0;
+            knownFiles = new Set();
+            statusInterval = setInterval(async () => {
+                try {
+                    const s = (await (await fetch(`${API_BASE}/api/status`)).json());
+                    document.getElementById('progressFill').style.width = s.progress + '%';
+                    document.getElementById('progressFill').textContent = s.progress + '%';
+                    document.getElementById('progressText').textContent = s.message || '识别中...';
+                    if (s.logs && s.logs.length > lastLogCount) {
+                        for (let i = lastLogCount; i < s.logs.length; i++)
+                            addLog(s.logs[i].message, s.logs[i].level);
+                        lastLogCount = s.logs.length;
+                    }
+
+                    // 实时检查已完成的文件，有新文件立刻显示下载按钮
+                    await refreshDownloads();
+
+                    if (!s.is_processing) finish(s);
+                } catch(e) {}
+            }, 1000);
+        }
+
+        async function refreshDownloads() {
+            try {
+                const data = await (await fetch(`${API_BASE}/api/outputs`)).json();
+                if (!data.files || !data.files.length) return;
+
+                let hasNew = false;
+                for (const f of data.files) {
+                    if (!knownFiles.has(f.name)) { hasNew = true; break; }
+                }
+                if (!hasNew) return;
+
+                const dl = document.getElementById('downloadList');
+                dl.innerHTML = data.files.map(f => {
+                    knownFiles.add(f.name);
+                    return `<li class="download-item">
+                        <div class="download-item-info">
+                            <span>📄</span>
+                            <span class="download-item-name">${f.name}</span>
+                            <span class="download-item-size">${formatSize(f.size)}</span>
+                        </div>
+                        <button class="btn-download" onclick="dlFile('${f.download_url}','${f.name}')">⬇️ 下载</button>
+                    </li>`;
+                }).join('');
+
+                if (data.files.length > 1)
+                    dl.innerHTML += `<li><button class="btn-download-all" onclick="dlAll()">⬇️ 全部下载</button></li>`;
+
+                document.getElementById('downloadSection').classList.add('show');
+            } catch(e) {}
+        }
+
+        async function finish(s) {
+            clearInterval(statusInterval);
+            isProcessing = false;
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            selectedFiles.forEach(f => f.status = s.success_count > 0 ? 'success' : 'error');
+            renderFileList();
+            addLog(`🎉 完成！成功 ${s.success_count} 个，失败 ${s.fail_count} 个`, 'success');
+            if (s.elapsed_time != null) {
+                const t = s.elapsed_time;
+                const ts = t < 60 ? t.toFixed(1)+' 秒' : Math.floor(t/60)+' 分 '+(t%60).toFixed(1)+' 秒';
+                addLog(`⏱️ 耗时 ${ts}（平均 ${(t/Math.max(s.success_count,1)).toFixed(1)} 秒/文件）`, 'success');
+                const bar = document.getElementById('statsBar');
+                bar.innerHTML = `⏱️ 耗时 <b>${ts}</b> · 文件 <b>${s.success_count}</b> 个 · 平均 <b>${(t/Math.max(s.success_count,1)).toFixed(1)}</b> 秒/文件`;
+                bar.style.display = 'block';
+            }
+            // 最后再刷新一次下载列表确保完整
+            await refreshDownloads();
+        }
+
+        function dlFile(url, name) {
+            const a = document.createElement('a'); a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+        async function dlAll() {
+            const data = await (await fetch(`${API_BASE}/api/outputs`)).json();
+            for (const f of (data.files||[])) { dlFile(f.download_url, f.name); await new Promise(r=>setTimeout(r,500)); }
+        }
+        async function stopProcessing() {
+            await fetch(`${API_BASE}/api/stop`, {method:'POST'}); addLog('⏹️ 已停止', 'warning');
+        }
+    </script>
+</body>
+</html>
