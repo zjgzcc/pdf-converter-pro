@@ -1,16 +1,16 @@
 # Core modules for PDF Converter Pro
-# 🔍 龙二【技术】优化
 
 """
 核心模块导出
 """
 
-from .ocr import (
+from .ocr_v2 import (
     OCREngine,
     OCREngineType,
+    OCRConfig,
     OCRProgress,
-    OCRError,
-    batch_ocr
+    OCRResult,
+    batch_ocr_parallel
 )
 
 from .converter import (
@@ -26,23 +26,14 @@ from .watermark import (
     batch_remove_watermarks
 )
 
-from .pipeline import (
-    ProcessingPipeline,
-    PipelineStage,
-    PipelineStatus,
-    PipelineProgress,
-    PipelineResult,
-    PipelineError,
-    create_pipeline
-)
-
 __all__ = [
     # OCR
     "OCREngine",
     "OCREngineType",
+    "OCRConfig",
     "OCRProgress",
-    "OCRError",
-    "batch_ocr",
+    "OCRResult",
+    "batch_ocr_parallel",
     
     # Converter
     "PDF2WordConverter",
@@ -54,13 +45,4 @@ __all__ = [
     # Watermark
     "WatermarkRemover",
     "batch_remove_watermarks",
-    
-    # Pipeline
-    "ProcessingPipeline",
-    "PipelineStage",
-    "PipelineStatus",
-    "PipelineProgress",
-    "PipelineResult",
-    "PipelineError",
-    "create_pipeline",
 ]

@@ -1,0 +1,35 @@
+# PDF Converter Pro - GPU 版本依赖
+# 包含完整的 CUDA 运行时库，确保 GPU 加速可用
+# 安装命令: pip install -r requirements-gpu.txt
+
+# Web 框架
+flask==3.0.0
+flask-cors==4.0.0
+
+# OCR 引擎
+rapidocr-onnxruntime==1.4.0
+ocrmypdf==16.1.1
+paddleocr==2.7.3
+paddlepaddle-gpu==2.6.1
+
+# PDF 处理
+pymupdf==1.23.26
+pdf2docx==0.5.8
+img2pdf==0.5.1
+
+# CUDA 运行时库 (必须固定版本)
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cudnn-cu12==9.20.0.48
+nvidia-cufft-cu12==11.4.1.4
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-nvjitlink-cu12==12.9.86
+
+# 图像处理
+pillow==10.2.0
+opencv-python==4.9.0.80
+numpy==1.26.4
+
+# 工具
+requests==2.31.0
+tqdm==4.66.2

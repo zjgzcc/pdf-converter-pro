@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # 导入核心模块
 sys.path.insert(0, str(Path(__file__).parent))
 # 🚀 优化：使用新版 OCR 模块（支持并行处理 + 表格优化）
-from core.ocr_v2 import OCREngine, OCREngineType, OCRConfig, batch_ocr_parallel
+from core.ocr_v2 import OCREngine, OCREngineType, OCRConfig, OCRResult, batch_ocr_parallel
 from core.converter import PDF2WordConverter, ConvertMethod
 from core.watermark import WatermarkRemover
 from core.postprocess import rebuild_text_layer
@@ -311,14 +311,33 @@ def health_check():
     })
 
 
+@app.route('/api/reset', methods=['POST'])
+def reset_status():
+    """重置处理状态（用于异常情况恢复）"""
+    processing_status['is_processing'] = False
+    processing_status['progress'] = 0
+    processing_status['message'] = '已重置'
+    processing_status['current_file'] = ''
+    processing_status['logs'] = []
+    log_message('🔄 状态已重置', 'info')
+    return jsonify({'success': True, 'message': '状态已重置'})
+
+
 @app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_files():
     """处理文件"""
     if request.method == 'OPTIONS':
         return '', 204
     
+    # 检查是否有卡住的旧任务（超过10分钟）
+    if processing_status['is_processing'] and processing_status['start_time']:
+        elapsed = time.time() - processing_status['start_time']
+        if elapsed > 600:  # 10分钟超时
+            log_message(f'⚠️ 检测到卡住的任务（{elapsed:.0f}秒），自动重置', 'warning')
+            processing_status['is_processing'] = False
+    
     if processing_status['is_processing']:
-        return jsonify({'error': '已有任务在处理中'}), 400
+        return jsonify({'error': '已有任务在处理中', 'elapsed': processing_status.get('elapsed_time')}), 400
     
     try:
         # 获取请求数据

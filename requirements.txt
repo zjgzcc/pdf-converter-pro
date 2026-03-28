@@ -1,27 +1,11 @@
-# === 核心依赖（必装）===
-
-# Web 服务器
-flask>=3.0.0
-flask-cors>=4.0.0
-
-# PDF 处理
-PyMuPDF>=1.24.0
-
-# AI OCR 引擎（推荐，精度远超 Tesseract）
-rapidocr_onnxruntime>=1.4.0
-
-# === 可选依赖 ===
-
-# Tesseract OCR（备选引擎，需另装 Tesseract 程序）
-# ocrmypdf>=16.0.0
-# pytesseract>=0.3.10
-
-# PDF 转 WORD
-pdf2docx>=0.1.0
-
-# 去水印
-opencv-python>=4.9.0
-numpy>=1.26.0
-
-# 图像处理
-Pillow>=10.2.0
+flask==3.0.0
+flask-cors==4.0.0
+pymupdf==1.23.26
+paddleocr==2.7.3
+rapidocr-onnxruntime==1.4.0
+pillow==10.2.0
+onnxruntime-gpu==1.16.3
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cudnn-cu12==9.20.0.48
+nvidia-cufft-cu12==11.4.1.4

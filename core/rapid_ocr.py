@@ -93,36 +93,31 @@ def get_rapid_ocr():
 
     device = detect_device()
 
-    # 优化参数：
-    #   text_score=0.3: 降低置信度阈值，保留更多小字/标点/符号
-    #   min_height=20: 降低最小高度，识别脚注/角标等小字
-    #   det_box_thresh=0.3: 降低检测框阈值，捕获更多文字区域（含水印下的文字）
-    #   det_unclip_ratio=1.8: 稍微放大检测框，减少文字被截断
-    ocr_params = dict(
-        text_score=0.3,
-        min_height=20,
-        det_box_thresh=0.3,
-        det_unclip_ratio=1.8,
-    )
-
+    # 使用自定义配置文件，针对漏识别问题优化：
+    #   - 降低检测阈值 (thresh: 0.2, box_thresh: 0.3)
+    #   - 关闭膨胀操作 (use_dilation: false)
+    #   - 增加候选框数量 (max_candidates: 3000)
+    #   - 使用 slow 模式提高精度 (score_mode: slow)
+    config_path = Path(__file__).parent.parent / "ocr_config.yaml"
+    
     if device["gpu"]:
         try:
             from rapidocr_onnxruntime import RapidOCR
             _rapid_ocr_instance = RapidOCR(
+                config_path=str(config_path),
                 det_use_cuda=True,
                 cls_use_cuda=True,
                 rec_use_cuda=True,
-                **ocr_params,
             )
             gpu_name = device.get("gpu_name", "GPU")
-            logger.info(f"RapidOCR 已加载（GPU 模式: {gpu_name}）")
+            logger.info(f"RapidOCR 已加载（GPU 模式: {gpu_name}，自定义配置）")
             return _rapid_ocr_instance
         except Exception as e:
             logger.warning(f"GPU 模式加载失败，回退 CPU: {e}")
 
     from rapidocr_onnxruntime import RapidOCR
-    _rapid_ocr_instance = RapidOCR(**ocr_params)
-    logger.info("RapidOCR 已加载（CPU 模式）")
+    _rapid_ocr_instance = RapidOCR(config_path=str(config_path))
+    logger.info("RapidOCR 已加载（CPU 模式，自定义配置）")
     return _rapid_ocr_instance
 
 
@@ -151,6 +146,47 @@ def _render_page(page, dpi: int, temp_dir: Path, page_num: int):
     img_path = temp_dir / f"page_{page_num}.png"
     pix.save(str(img_path))
     return img_path, pix, page_w, page_h, pix.width, pix.height
+
+
+def _preprocess_image(img_path: Path) -> Path:
+    """
+    图像预处理：增强对比度、锐化，提高 OCR 识别率
+    特别针对漏识别问题优化
+    """
+    try:
+        import cv2
+        import numpy as np
+        
+        # 读取图像
+        img = cv2.imread(str(img_path))
+        if img is None:
+            return img_path
+        
+        # 转换为灰度
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # 自适应直方图均衡化（增强对比度）
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        
+        # 锐化
+        kernel = np.array([[-1, -1, -1],
+                          [-1,  9, -1],
+                          [-1, -1, -1]])
+        sharpened = cv2.filter2D(enhanced, -1, kernel)
+        
+        # 轻度去噪（保持文字清晰）
+        denoised = cv2.fastNlMeansDenoising(sharpened, None, 10, 7, 21)
+        
+        # 保存预处理后的图像
+        preprocessed_path = img_path.parent / f"{img_path.stem}_enhanced.png"
+        cv2.imwrite(str(preprocessed_path), denoised)
+        
+        return preprocessed_path
+        
+    except Exception as e:
+        logger.warning(f"图像预处理失败: {e}，使用原图")
+        return img_path
 
 
 def _is_vertical(box, sx, sy, text):
@@ -203,7 +239,8 @@ def _build_text_layer(new_page, result, page_w, page_h, img_w, img_h):
         box_w = ((x1 - x0)**2 + (y1 - y0)**2) ** 0.5
         box_h = ((x3 - x0)**2 + (y3 - y0)**2) ** 0.5
 
-        if box_h < 1 or box_w < 1:
+        # 不过滤小框，保留所有识别结果（包括"示例 1:"这样的短文字）
+        if box_h < 0.5 or box_w < 0.5:
             continue
 
         if _is_vertical(box, sx, sy, text):
@@ -299,10 +336,25 @@ def rapid_ocr_pdf(input_pdf: Path, output_pdf: Path, dpi: int = 300, stop_check=
                 page_h = page.rect.height
 
                 # 渲染为图片
-                img_path, pix, pw, ph, iw, ih = _render_page(page, dpi, temp_dir, page_num)
-
-                # OCR 识别
-                result, elapse = engine(str(img_path))
+                img_path, pix, pw, ph, iw, ih = _render_page(page, 400, temp_dir, page_num)
+                
+                # 使用 PaddleOCR + PP-DocLayoutV3 方案
+                logger.info(f"  第 {page_num+1}页: 使用 PaddleOCR + PP-DocLayoutV3...")
+                try:
+                    from core.paddle_layout_ocr import paddle_layout_ocr
+                    result = paddle_layout_ocr(img_path, temp_dir)
+                    
+                    if result:
+                        logger.info(f"  第 {page_num+1}页: 识别到 {len(result)} 行")
+                        # 打印前15行用于调试
+                        for i, (box, text) in enumerate(result[:15]):
+                            logger.info(f"    [{i+1}] {text[:40]}...")
+                    else:
+                        logger.warning(f"  第 {page_num+1}页: 未识别到文字")
+                        
+                except Exception as e:
+                    logger.error(f"  PaddleOCR + PP-DocLayoutV3 失败: {e}")
+                    result = []
 
                 # 构建输出页面
                 new_page = new_doc.new_page(width=page_w, height=page_h)
